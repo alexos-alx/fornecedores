@@ -11,7 +11,7 @@ html,body{margin:0;width:100%;height:100%;background:#07111f;color:#fff;font-fam
 <body>
 <div class="loading"><div class="box"><div class="spin"></div><strong>Carregando Fornecedores Polipet</strong><p>Conectando à base compartilhada...</p></div></div>
 <script>
-(async()=>{try{const u='https://dreqidkohffwlhjtnexd.supabase.co/functions/v1/fornecedores-polipet';const r=await fetch(u,{cache:'no-store'});if(!r.ok)throw new Error('HTTP '+r.status);const h=await r.text();document.open();document.write(h);document.close()}catch(e){document.body.innerHTML='<div class="loading"><div class="box"><strong>Não foi possível carregar o sistema.</strong><p>'+String(e.message||e)+'</p></div></div>'}})();
+(async()=>{try{const u='https://dreqidkohffwlhjtnexd.supabase.co/functions/v1/fornecedores-polipet-app?v='+Date.now();const r=await fetch(u,{cache:'no-store'});if(!r.ok)throw new Error('HTTP '+r.status);const h=await r.text();document.open();document.write(h);document.close()}catch(e){document.body.innerHTML='<div class="loading"><div class="box"><strong>Não foi possível carregar o sistema.</strong><p>'+String(e.message||e)+'</p></div></div>'}})();
 </script>
 </body>
 </html>
