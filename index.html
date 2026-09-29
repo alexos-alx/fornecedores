@@ -45,7 +45,7 @@ th[data-sort]:hover{filter:brightness(1.08)}
 .sort-indicator.active{opacity:1}
 .order-main-actions{display:flex!important;align-items:stretch;gap:10px;flex-wrap:nowrap!important}
 .order-main-actions>.btn{flex:1 1 0!important;min-width:0!important;width:0;justify-content:center;white-space:nowrap}
-.fulfillment-btn{min-width:0!important;background:transparent!important;border:2px solid var(--line)!important;color:var(--text)!important;box-shadow:none!important}
+.fulfillment-btn{min-width:0!important;background:transparent!important;border:2px solid var(--line)!important;color:var(--text)!important;box-shadow:none!important;font-size:14px!important;font-weight:800!important;letter-spacing:0!important;text-transform:none!important;padding-left:10px!important;padding-right:10px!important}
 .fulfillment-btn:hover{transform:translateY(-1px)}
 .fulfillment-btn.active{border-color:#16a34a!important;background:rgba(34,197,94,.12)!important;color:#166534!important}
 body:not(.light) .fulfillment-btn.active{color:#86efac!important}
@@ -140,7 +140,7 @@ async function saveObservation(id,syncAfter=false){
  else if(st.status==='in_progress')orderButtons='<button class="btn warning" data-order="takeover">Assumir de '+esc(handler)+'</button>';
  else if(st.status==='ok')orderButtons='<button class="btn" data-order="reopen">Reabrir pedido</button>';
  let nf=Boolean(st.invoice_issued),del=Boolean(st.delivered);
- let fulfillmentButtons='<button class="btn fulfillment-btn '+(nf?'active':'')+'" data-fulfillment="invoice">'+(nf?'✓ ':'')+'N.F EMITIDA</button><button class="btn fulfillment-btn '+(del?'active':'')+'" data-fulfillment="delivery">'+(del?'✓ ':'')+'PEDIDO ENTREGUE</button>';
+ let fulfillmentButtons='<button class="btn fulfillment-btn '+(nf?'active':'')+'" data-fulfillment="invoice">'+(nf?'✓ ':'')+'N.F emitida</button><button class="btn fulfillment-btn '+(del?'active':'')+'" data-fulfillment="delivery">'+(del?'✓ ':'')+'Pedido entregue</button>';
  let fulfillmentMeta=(nf?'<span>N.F: '+esc(uidName(st.invoice_issued_by))+' • '+dt(st.invoice_issued_at)+'</span>':'')+(del?'<span>Entrega: '+esc(uidName(st.delivered_by))+' • '+dt(st.delivered_at)+'</span>':'');
  let hist=state.history.filter(h=>Number(h.supplier_id)===Number(s.id)).slice(0,8);
  if(!noteDirty[s.id])noteDrafts[s.id]=String(st.note??'');
