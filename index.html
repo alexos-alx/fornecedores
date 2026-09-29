@@ -24,8 +24,13 @@ html,body{margin:0;width:100%;height:100%;background:#07111f;color:#fff;font-fam
   }
 
   h=h.replace(
+    "const API='https://dreqidkohffwlhjtnexd.supabase.co/functions/v1/fornecedores-polipet';",
+    "const API='https://dreqidkohffwlhjtnexd.supabase.co/functions/v1/fornecedores-polipet';const FULFILL_API='https://dreqidkohffwlhjtnexd.supabase.co/functions/v1/fornecedores-fulfillment';"
+  );
+
+  h=h.replace(
     "selectedId=null,pendingConfirm=null,syncTimer=null;",
-    "selectedId=null,pendingConfirm=null,syncTimer=null,tableSort={key:null,dir:'asc'};"
+    "selectedId=null,pendingConfirm=null,syncTimer=null,tableSort={key:null,dir:'asc'},noteDrafts={},noteDirty={},noteSaveTimers={};"
   );
 
   h=h.replace(
@@ -38,6 +43,20 @@ th[data-sort]{cursor:pointer;user-select:none;white-space:nowrap}
 th[data-sort]:hover{filter:brightness(1.08)}
 .sort-indicator{display:inline-block;margin-left:5px;min-width:10px;font-size:9px;opacity:.45}
 .sort-indicator.active{opacity:1}
+.order-main-actions{align-items:center;gap:9px;flex-wrap:wrap}
+.fulfillment-btn{min-width:146px;background:transparent!important;border:2px solid var(--line)!important;color:var(--text)!important;box-shadow:none!important}
+.fulfillment-btn:hover{transform:translateY(-1px)}
+.fulfillment-btn.active{border-color:#16a34a!important;background:rgba(34,197,94,.12)!important;color:#166534!important}
+body:not(.light) .fulfillment-btn.active{color:#86efac!important}
+.detail-bottom{display:grid;grid-template-columns:minmax(240px,.9fr) minmax(320px,1.45fr);gap:26px;margin-top:24px;align-items:start}
+.notes-panel h4,.history h4{margin:0 0 12px;text-transform:uppercase;letter-spacing:.05em;font-size:12px;color:var(--muted)}
+.notes-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.note-save-state{font-size:11px;color:var(--muted);min-height:16px}
+.order-notes{width:100%;min-height:138px;resize:vertical;border:1px solid var(--line);border-radius:14px;background:rgba(255,255,255,.035);color:var(--text);padding:13px 14px;line-height:1.45;outline:none}
+body.light .order-notes{background:#fff}
+.order-notes:focus{border-color:#38bdf8;box-shadow:0 0 0 3px rgba(56,189,248,.10)}
+.fulfillment-meta{font-size:10px;color:var(--muted);margin-top:8px;display:flex;gap:16px;flex-wrap:wrap}
+@media(max-width:760px){.detail-bottom{grid-template-columns:1fr}.fulfillment-btn{min-width:0;flex:1 1 140px}}
 </style></head>`);
 
   const helpers=String.raw`
@@ -71,12 +90,92 @@ function updateTableSortHeaders(){
    th.setAttribute('aria-sort',active?(tableSort.dir==='asc'?'ascending':'descending'):'none')
  })
 }
+async function fulfillmentApi(action,payload={}){
+ let headers={'Content-Type':'application/json'};if(token)headers.Authorization='Bearer '+token;
+ let r=await fetch(FULFILL_API,{method:'POST',headers,body:JSON.stringify({action,...payload})});
+ let j=await r.json().catch(()=>({error:'Resposta inválida do servidor'}));
+ if(!r.ok||j.error)throw new Error(j.error||'Erro na operação');
+ return j
+}
+function mergeStatusRow(row){
+ if(!row)return;let i=state.statuses.findIndex(x=>Number(x.supplier_id)===Number(row.supplier_id));
+ if(i>=0)state.statuses[i]=row;else state.statuses.push(row)
+}
+async function toggleFulfillment(kind){
+ let s=state.suppliers.find(x=>Number(x.id)===Number(selectedId));if(!s)return;
+ let st=statusFor(s.id),isInvoice=kind==='invoice',current=Boolean(isInvoice?st.invoice_issued:st.delivered);
+ try{
+   let j=await fulfillmentApi(isInvoice?'set_invoice_issued':'set_delivered',{supplier_id:s.id,value:!current});
+   mergeStatusRow(j.status);toast(isInvoice?(!current?'N.F marcada como emitida.':'N.F desmarcada.'):(!current?'Pedido marcado como entregue.':'Entrega desmarcada.'));
+   renderDetail();
+ }catch(err){toast(err.message,4500)}
+}
+async function saveObservation(id,syncAfter=false){
+ clearTimeout(noteSaveTimers[id]);
+ let note=String(noteDrafts[id]??'');
+ let indicator=$('noteSaveState');if(indicator)indicator.textContent='Salvando...';
+ try{
+   let j=await fulfillmentApi('save_note',{supplier_id:id,note});mergeStatusRow(j.status);noteDirty[id]=false;
+   indicator=$('noteSaveState');if(indicator)indicator.textContent='Salvo';
+   if(syncAfter)await sync(false)
+ }catch(err){indicator=$('noteSaveState');if(indicator)indicator.textContent='Erro ao salvar';toast(err.message,4500)}
+}
 `;
   h=h.replace('function render(){',helpers+'\nfunction render(){');
   h=h.replace('renderDetail();renderTable(list)','renderDetail();renderTable(sortedTableList(list));updateTableSortHeaders()');
+  h=h.replace('setConnection(true);showApp();render();if(state.user.must_change_password)',"setConnection(true);showApp();if(document.activeElement?.id!=='orderNotes')render();if(state.user.must_change_password)");
+
+  const newDetail=String.raw`function renderDetail(){
+ let s=state.suppliers.find(x=>Number(x.id)===Number(selectedId));if(!s){$('detail').innerHTML='<div class="detail" style="color:var(--muted)">Selecione um fornecedor.</div>';$('detailStatus').innerHTML='';return}
+ let st=statusFor(s.id),handler=uidName(st.handled_by),buyer=uidName(s.assigned_buyer);$('detailStatus').innerHTML=statusBadge(st);
+ let orderButtons='';if(st.status==='pending')orderButtons='<button class="btn warning" data-order="claim">Assumir pedido</button><button class="btn success" data-order="complete">Marcar Pedido OK</button>';
+ else if(st.status==='in_progress'&&st.handled_by===state.user.id)orderButtons='<button class="btn success" data-order="complete">Marcar Pedido OK</button><button class="btn" data-order="release">Liberar pedido</button>';
+ else if(st.status==='in_progress')orderButtons='<button class="btn warning" data-order="takeover">Assumir de '+esc(handler)+'</button>';
+ else if(st.status==='ok')orderButtons='<button class="btn" data-order="reopen">Reabrir pedido</button>';
+ let nf=Boolean(st.invoice_issued),del=Boolean(st.delivered);
+ let fulfillmentButtons='<button class="btn fulfillment-btn '+(nf?'active':'')+'" data-fulfillment="invoice">'+(nf?'✓ ':'')+'N.F EMITIDA</button><button class="btn fulfillment-btn '+(del?'active':'')+'" data-fulfillment="delivery">'+(del?'✓ ':'')+'PEDIDO ENTREGUE</button>';
+ let fulfillmentMeta=(nf?'<span>N.F: '+esc(uidName(st.invoice_issued_by))+' • '+dt(st.invoice_issued_at)+'</span>':'')+(del?'<span>Entrega: '+esc(uidName(st.delivered_by))+' • '+dt(st.delivered_at)+'</span>':'');
+ let hist=state.history.filter(h=>Number(h.supplier_id)===Number(s.id)).slice(0,8);
+ if(!noteDirty[s.id])noteDrafts[s.id]=String(st.note??'');
+ let note=noteDrafts[s.id]??'';
+ $('detail').innerHTML='<div class="detail"><div class="detail-head"><div><div class="detail-name">'+esc(s.short_name)+'</div><div class="detail-corp">'+esc(s.corporate_name)+'</div></div></div><div class="detail-grid">'+
+ '<div class="info"><small>Código fornecedor</small><strong>'+esc(s.code)+'</strong></div><div class="info"><small>CNPJ</small><strong>'+esc(cnpj(s.cnpj))+'</strong></div>'+
+ '<div class="info"><small>Sistemática</small><strong>'+esc(s.systematic||'—')+'</strong></div><div class="info"><small>Comprador responsável</small><strong>'+esc(s.assigned_buyer?buyer:'Sem comprador')+'</strong></div>'+
+ '<div class="info"><small>Responsável / contato</small><strong>'+esc(s.contact_name||'—')+'</strong></div><div class="info"><small>Telefone</small><strong>'+esc(s.phone||'—')+'</strong></div>'+
+ '<div class="info"><small>Pedido mínimo</small><strong>'+money(s.min_order)+'</strong></div><div class="info"><small>Média de vendas / mês</small><strong>'+money(s.avg_monthly_sales)+'</strong></div>'+
+ '<div class="info"><small>Referência de compra mensal (70%)</small><strong>'+money(Number(s.avg_monthly_sales||0)*.70)+'</strong></div><div class="info"><small>E-mail</small><strong>'+esc(s.email||'—')+'</strong></div></div>'+
+ '<div class="order-box"><div class="order-title"><strong>'+({pending:'Pedido pendente',in_progress:'Pedido em andamento',ok:'Pedido OK'}[st.status]||'Pedido pendente')+'</strong>'+statusBadge(st)+'</div><div class="order-note">'+(st.status==='in_progress'?'Assumido por '+esc(handler)+' em '+dt(st.started_at):st.status==='ok'?'Concluído por '+esc(handler)+' em '+dt(st.completed_at):'Nenhum comprador trabalhando neste pedido no momento.')+'</div><div class="actions order-main-actions">'+orderButtons+fulfillmentButtons+'</div>'+(fulfillmentMeta?'<div class="fulfillment-meta">'+fulfillmentMeta+'</div>':'')+'</div>'+
+ '<div class="actions"><button class="btn primary" data-edit="'+s.id+'">Editar cadastro</button>'+(state.user.role==='admin'?'<button class="btn danger" data-delete="'+s.id+'">Desativar fornecedor</button>':'')+(s.cnpj?'<button class="btn" data-copy="'+esc(s.cnpj)+'">Copiar CNPJ</button>':'')+(s.email?'<button class="btn" data-copy="'+esc(s.email)+'">Copiar e-mail</button>':'')+'</div>'+
+ '<div class="detail-bottom"><div class="history"><h4>Histórico recente</h4>'+(hist.length?hist.map(h=>'<div class="hist-item"><b>'+esc(uidName(h.user_id))+'</b> • '+esc(actionLabel(h.action))+' • '+dt(h.created_at)+'</div>').join(''):'<div class="hist-item">Nenhuma movimentação nesta rodada.</div>')+'</div><div class="notes-panel"><div class="notes-head"><h4>Observações</h4><span class="note-save-state" id="noteSaveState">'+(noteDirty[s.id]?'Alterações não salvas':'')+'</span></div><textarea class="order-notes" id="orderNotes" data-note-supplier="'+s.id+'" maxlength="5000" placeholder="Registre aqui qualquer observação sobre este fornecedor ou pedido...">'+esc(note)+'</textarea></div></div></div>'
+}
+`;
+  const detailStart=h.indexOf('function renderDetail(){');
+  const detailEnd=h.indexOf('function actionLabel',detailStart);
+  if(detailStart<0||detailEnd<0)throw new Error('Não foi possível atualizar o detalhe do fornecedor.');
+  h=h.slice(0,detailStart)+newDetail+h.slice(detailEnd);
+
+  const actionStart=h.indexOf('function actionLabel');
+  const actionEnd=h.indexOf('function renderTable',actionStart);
+  const newAction=String.raw`function actionLabel(a){return({claim:'assumiu o pedido',complete:'marcou Pedido OK',release:'liberou o pedido',reopen:'reabriu o pedido',takeover:'assumiu o pedido de outro comprador',new_round:'iniciou nova rodada',invoice_issued:'marcou N.F emitida',invoice_unissued:'desmarcou N.F emitida',delivered:'marcou Pedido entregue',delivery_reverted:'desmarcou Pedido entregue',note_updated:'atualizou observações'}[a]||a)}
+`;
+  h=h.slice(0,actionStart)+newAction+h.slice(actionEnd);
 
   const headerHandler="document.querySelectorAll('th[data-sort]').forEach(th=>th.addEventListener('click',()=>{let key=th.dataset.sort;if(tableSort.key===key)tableSort.dir=tableSort.dir==='asc'?'desc':'asc';else{tableSort.key=key;tableSort.dir='asc'}render()}));\n";
-  h=h.replace("document.addEventListener('click',e=>{let x;",headerHandler+"document.addEventListener('click',e=>{let x;");
+  h=h.replace("document.addEventListener('click',e=>{let x;",headerHandler+"document.addEventListener('click',e=>{let x;if(x=e.target.closest('[data-fulfillment]')){toggleFulfillment(x.dataset.fulfillment);return}");
+
+  const noteEvents=String.raw`
+document.addEventListener('input',e=>{
+ if(e.target?.id!=='orderNotes')return;
+ let id=Number(e.target.dataset.noteSupplier);noteDrafts[id]=e.target.value;noteDirty[id]=true;
+ let indicator=$('noteSaveState');if(indicator)indicator.textContent='Aguardando...';
+ clearTimeout(noteSaveTimers[id]);noteSaveTimers[id]=setTimeout(()=>saveObservation(id,false),900)
+});
+document.addEventListener('blur',e=>{
+ if(e.target?.id!=='orderNotes')return;
+ let id=Number(e.target.dataset.noteSupplier);if(noteDirty[id])saveObservation(id,true)
+},true);
+`;
+  h=h.replace("$('loginForm').addEventListener('submit',login);",noteEvents+"\n$('loginForm').addEventListener('submit',login);");
 
   document.open();document.write(h);document.close();
 }catch(e){document.body.innerHTML='<div class="loading"><div class="box"><strong>Não foi possível carregar o sistema.</strong><p>'+String(e.message||e)+'</p></div></div>'}})();
