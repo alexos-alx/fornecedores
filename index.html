@@ -17,100 +17,67 @@ html,body{margin:0;width:100%;height:100%;background:#07111f;color:#fff;font-fam
   if(!r.ok)throw new Error('HTTP '+r.status);
   let h=await r.text();
 
-  h=h.replace(/<style>\s*\.table-sortable-head\{cursor:pointer;user-select:none;white-space:nowrap;transition:[\s\S]*?<\/script>/i,'');
+  const oldSortStart=h.indexOf('<style>\n.table-sortable-head');
+  if(oldSortStart>=0){
+    const oldSortEnd=h.indexOf('<'+'/script>',oldSortStart);
+    if(oldSortEnd>=0)h=h.slice(0,oldSortStart)+h.slice(oldSortEnd+9);
+  }
 
-  const persistentSort=String.raw`
-<style>
-.table-sortable-head{cursor:pointer;user-select:none;white-space:nowrap}
-.table-sort-indicator{display:inline-block;margin-left:6px;min-width:12px;font-size:10px;opacity:.55}
-.table-sortable-head[aria-sort="ascending"] .table-sort-indicator,.table-sortable-head[aria-sort="descending"] .table-sort-indicator{opacity:1}
-</style>
-<script>
-(function(){
-  let currentSort=null;
-  let applying=false;
-  const norm=s=>String(s||'').trim().normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
-  const headerText=th=>{
-    if(!th)return '';
-    const clone=th.cloneNode(true);
-    clone.querySelectorAll('.table-sort-indicator').forEach(x=>x.remove());
-    return clone.textContent||'';
-  };
-  const numeric=(txt,header)=>{
-    const h=norm(header), s=String(txt||'').trim();
-    if(!s||s==='—'||s==='-') return null;
-    if(h.includes('pedido minimo')||h.includes('media vendas')||h.includes('ref. compra')||h.includes('ref compra')){
-      const n=Number(s.replace(/R\$\s*/gi,'').replace(/\./g,'').replace(',','.').replace(/[^0-9.-]/g,''));
-      return Number.isFinite(n)?n:null;
-    }
-    if(h.startsWith('cod')||h.includes('codigo')){
-      const n=Number(s.replace(/[^0-9.-]/g,''));
-      return Number.isFinite(n)?n:null;
-    }
-    return undefined;
-  };
-  function sortableTable(){
-    return [...document.querySelectorAll('table')].find(t=>{
-      const hs=[...t.querySelectorAll('thead th')].map(x=>norm(headerText(x)));
-      return hs.some(x=>x.includes('fornecedor'))&&hs.some(x=>x.startsWith('cod')||x.includes('codigo'));
-    })||null;
-  }
-  function compareRows(a,b,index,header,dir){
-    const at=a.cells[index]?.textContent||'', bt=b.cells[index]?.textContent||'';
-    const an=numeric(at,header), bn=numeric(bt,header);
-    let c=0;
-    if(an!==undefined||bn!==undefined){
-      if(an==null&&bn==null)c=0;
-      else if(an==null)c=1;
-      else if(bn==null)c=-1;
-      else c=an-bn;
-    }else c=norm(at).localeCompare(norm(bt),'pt-BR',{numeric:true,sensitivity:'base'});
-    return dir==='asc'?c:-c;
-  }
-  function updateHeaders(table){
-    [...table.querySelectorAll('thead th')].forEach((th,i)=>{
-      th.classList.add('table-sortable-head');
-      let ind=th.querySelector('.table-sort-indicator');
-      if(!ind){ind=document.createElement('span');ind.className='table-sort-indicator';th.appendChild(ind)}
-      const active=currentSort&&currentSort.index===i;
-      th.setAttribute('aria-sort',active?(currentSort.dir==='asc'?'ascending':'descending'):'none');
-      ind.textContent=active?(currentSort.dir==='asc'?'↑':'↓'):'↕';
-    });
-  }
-  function applySort(){
-    if(applying)return;
-    const table=sortableTable();
-    if(!table)return;
-    updateHeaders(table);
-    if(!currentSort)return;
-    const tbody=table.tBodies[0], hs=[...table.querySelectorAll('thead th')];
-    if(!tbody||!hs[currentSort.index])return;
-    const header=headerText(hs[currentSort.index]);
-    const rows=[...tbody.rows];
-    const sorted=rows.slice().sort((a,b)=>compareRows(a,b,currentSort.index,header,currentSort.dir));
-    if(!rows.some((r,i)=>r!==sorted[i]))return;
-    applying=true;
-    const frag=document.createDocumentFragment();
-    sorted.forEach(r=>frag.appendChild(r));
-    tbody.appendChild(frag);
-    applying=false;
-  }
-  document.addEventListener('click',e=>{
-    const th=e.target.closest('th');if(!th)return;
-    const table=th.closest('table');
-    const target=sortableTable();
-    if(!table||!target||table!==target)return;
-    const hs=[...table.querySelectorAll('thead th')],index=hs.indexOf(th);if(index<0)return;
-    e.preventDefault();e.stopImmediatePropagation();
-    const dir=currentSort&&currentSort.index===index&&currentSort.dir==='asc'?'desc':'asc';
-    currentSort={index,dir};
-    applySort();
-  },true);
-  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',applySort);else applySort();
-  new MutationObserver(()=>{if(!applying)applySort()}).observe(document.documentElement,{childList:true,subtree:true});
-})();
-<\/script>`;
-  h=h.replace(/<\/body>/i,persistentSort+'\n</body>');
+  h=h.replace(
+    "selectedId=null,pendingConfirm=null,syncTimer=null;",
+    "selectedId=null,pendingConfirm=null,syncTimer=null,tableSort={key:null,dir:'asc'};"
+  );
+
+  h=h.replace(
+    '<th>Cód.</th><th>Fornecedor</th><th>Sistemática</th><th>Comprador</th><th>Responsável</th><th>Pedido mínimo</th><th class="num">Média vendas/mês</th><th class="num">Ref. compra 70%</th><th>Status</th><th>Feito por</th>',
+    '<th data-sort="code">Cód. <span class="sort-indicator">↕</span></th><th data-sort="short_name">Fornecedor <span class="sort-indicator">↕</span></th><th data-sort="systematic">Sistemática <span class="sort-indicator">↕</span></th><th data-sort="buyer">Comprador <span class="sort-indicator">↕</span></th><th data-sort="contact_name">Responsável <span class="sort-indicator">↕</span></th><th data-sort="min_order">Pedido mínimo <span class="sort-indicator">↕</span></th><th class="num" data-sort="avg_monthly_sales">Média vendas/mês <span class="sort-indicator">↕</span></th><th class="num" data-sort="ref70">Ref. compra 70% <span class="sort-indicator">↕</span></th><th data-sort="status">Status <span class="sort-indicator">↕</span></th><th data-sort="handled_by">Feito por <span class="sort-indicator">↕</span></th>'
+  );
+
+  h=h.replace('</head>',`<style>
+th[data-sort]{cursor:pointer;user-select:none;white-space:nowrap}
+th[data-sort]:hover{filter:brightness(1.08)}
+.sort-indicator{display:inline-block;margin-left:5px;min-width:10px;font-size:9px;opacity:.45}
+.sort-indicator.active{opacity:1}
+</style></head>`);
+
+  const helpers=String.raw`
+function tableSortValue(s,key){
+ if(key==='code'){let raw=String(s.code??''),d=raw.replace(/\D/g,'');return d?Number(d):raw}
+ if(key==='short_name')return s.short_name||'';
+ if(key==='systematic')return s.systematic||'';
+ if(key==='buyer')return uidName(s.assigned_buyer)||'';
+ if(key==='contact_name')return s.contact_name||'';
+ if(key==='min_order')return Number(s.min_order||0);
+ if(key==='avg_monthly_sales')return Number(s.avg_monthly_sales||0);
+ if(key==='ref70')return Number(s.avg_monthly_sales||0)*.70;
+ if(key==='status'){let st=statusFor(s.id)?.status||'pending';return st==='in_progress'?'EM ANDAMENTO':st==='ok'?'PEDIDO OK':'PENDENTE'}
+ if(key==='handled_by')return uidName(statusFor(s.id)?.handled_by)||'';
+ return ''
+}
+function sortedTableList(list){
+ if(!tableSort.key)return list.slice();
+ let dir=tableSort.dir==='desc'?-1:1,key=tableSort.key;
+ return list.map((s,i)=>({s,i})).sort((a,b)=>{
+   let av=tableSortValue(a.s,key),bv=tableSortValue(b.s,key),c=0;
+   if(typeof av==='number'&&typeof bv==='number')c=av-bv;
+   else c=String(av??'').localeCompare(String(bv??''),'pt-BR',{numeric:true,sensitivity:'base'});
+   return c===0?a.i-b.i:c*dir
+ }).map(x=>x.s)
+}
+function updateTableSortHeaders(){
+ document.querySelectorAll('th[data-sort]').forEach(th=>{
+   let ind=th.querySelector('.sort-indicator'),active=th.dataset.sort===tableSort.key;
+   if(ind){ind.textContent=active?(tableSort.dir==='asc'?'↑':'↓'):'↕';ind.classList.toggle('active',active)}
+   th.setAttribute('aria-sort',active?(tableSort.dir==='asc'?'ascending':'descending'):'none')
+ })
+}
+`;
+  h=h.replace('function render(){',helpers+'\nfunction render(){');
+  h=h.replace('renderDetail();renderTable(list)','renderDetail();renderTable(sortedTableList(list));updateTableSortHeaders()');
+
+  const headerHandler="document.querySelectorAll('th[data-sort]').forEach(th=>th.addEventListener('click',()=>{let key=th.dataset.sort;if(tableSort.key===key)tableSort.dir=tableSort.dir==='asc'?'desc':'asc';else{tableSort.key=key;tableSort.dir='asc'}render()}));\n";
+  h=h.replace("document.addEventListener('click',e=>{let x;",headerHandler+"document.addEventListener('click',e=>{let x;");
+
   document.open();document.write(h);document.close();
 }catch(e){document.body.innerHTML='<div class="loading"><div class="box"><strong>Não foi possível carregar o sistema.</strong><p>'+String(e.message||e)+'</p></div></div>'}})();
 </script>
