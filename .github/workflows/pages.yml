@@ -27,6 +27,19 @@ jobs:
       - name: Setup Pages
         uses: actions/configure-pages@v5
 
+      - name: Ensure favicon link
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('index.html')
+          s = p.read_text(encoding='utf-8')
+          tag = '<link rel="icon" type="image/svg+xml" href="./favicon.svg">'
+          shortcut = '<link rel="shortcut icon" href="./favicon.svg">'
+          if tag not in s:
+              s = s.replace('<title>Polipet | Fornecedores Online</title>', '<title>Polipet | Fornecedores Online</title>\n' + tag + '\n' + shortcut, 1)
+          p.write_text(s, encoding='utf-8')
+          PY
+
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
