@@ -17,7 +17,6 @@ html,body{margin:0;width:100%;height:100%;background:#07111f;color:#fff;font-fam
   if(!r.ok)throw new Error('HTTP '+r.status);
   let h=await r.text();
 
-  /* remove a ordenação anterior injetada pelo backend para evitar dois controladores concorrentes */
   h=h.replace(/<style>\s*\.table-sortable-head\{cursor:pointer;user-select:none;white-space:nowrap;transition:[\s\S]*?<\/script>/i,'');
 
   const persistentSort=String.raw`
@@ -31,6 +30,12 @@ html,body{margin:0;width:100%;height:100%;background:#07111f;color:#fff;font-fam
   let currentSort=null;
   let applying=false;
   const norm=s=>String(s||'').trim().normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
+  const headerText=th=>{
+    if(!th)return '';
+    const clone=th.cloneNode(true);
+    clone.querySelectorAll('.table-sort-indicator').forEach(x=>x.remove());
+    return clone.textContent||'';
+  };
   const numeric=(txt,header)=>{
     const h=norm(header), s=String(txt||'').trim();
     if(!s||s==='—'||s==='-') return null;
@@ -38,7 +43,7 @@ html,body{margin:0;width:100%;height:100%;background:#07111f;color:#fff;font-fam
       const n=Number(s.replace(/R\$\s*/gi,'').replace(/\./g,'').replace(',','.').replace(/[^0-9.-]/g,''));
       return Number.isFinite(n)?n:null;
     }
-    if(h==='cod.'||h==='cod'||h.includes('codigo')){
+    if(h.startsWith('cod')||h.includes('codigo')){
       const n=Number(s.replace(/[^0-9.-]/g,''));
       return Number.isFinite(n)?n:null;
     }
@@ -46,8 +51,8 @@ html,body{margin:0;width:100%;height:100%;background:#07111f;color:#fff;font-fam
   };
   function sortableTable(){
     return [...document.querySelectorAll('table')].find(t=>{
-      const hs=[...t.querySelectorAll('thead th')].map(x=>norm(x.textContent));
-      return hs.some(x=>x.includes('fornecedor'))&&hs.some(x=>x==='cod.'||x==='cod'||x.includes('codigo'));
+      const hs=[...t.querySelectorAll('thead th')].map(x=>norm(headerText(x)));
+      return hs.some(x=>x.includes('fornecedor'))&&hs.some(x=>x.startsWith('cod')||x.includes('codigo'));
     })||null;
   }
   function compareRows(a,b,index,header,dir){
@@ -80,7 +85,7 @@ html,body{margin:0;width:100%;height:100%;background:#07111f;color:#fff;font-fam
     if(!currentSort)return;
     const tbody=table.tBodies[0], hs=[...table.querySelectorAll('thead th')];
     if(!tbody||!hs[currentSort.index])return;
-    const header=hs[currentSort.index].textContent||'';
+    const header=headerText(hs[currentSort.index]);
     const rows=[...tbody.rows];
     const sorted=rows.slice().sort((a,b)=>compareRows(a,b,currentSort.index,header,currentSort.dir));
     if(!rows.some((r,i)=>r!==sorted[i]))return;
@@ -92,7 +97,9 @@ html,body{margin:0;width:100%;height:100%;background:#07111f;color:#fff;font-fam
   }
   document.addEventListener('click',e=>{
     const th=e.target.closest('th');if(!th)return;
-    const table=th.closest('table');if(!table||table!==sortableTable())return;
+    const table=th.closest('table');
+    const target=sortableTable();
+    if(!table||!target||table!==target)return;
     const hs=[...table.querySelectorAll('thead th')],index=hs.indexOf(th);if(index<0)return;
     e.preventDefault();e.stopImmediatePropagation();
     const dir=currentSort&&currentSort.index===index&&currentSort.dir==='asc'?'desc':'asc';
