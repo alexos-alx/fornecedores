@@ -11,7 +11,98 @@ html,body{margin:0;width:100%;height:100%;background:#07111f;color:#fff;font-fam
 <body>
 <div class="loading"><div class="box"><div class="spin"></div><strong>Carregando Fornecedores Polipet</strong><p>Conectando à base compartilhada...</p></div></div>
 <script>
-(async()=>{try{const u='https://dreqidkohffwlhjtnexd.supabase.co/functions/v1/fornecedores-polipet-app?v='+Date.now();const r=await fetch(u,{cache:'no-store'});if(!r.ok)throw new Error('HTTP '+r.status);const h=await r.text();document.open();document.write(h);document.close()}catch(e){document.body.innerHTML='<div class="loading"><div class="box"><strong>Não foi possível carregar o sistema.</strong><p>'+String(e.message||e)+'</p></div></div>'}})();
+(async()=>{try{
+  const u='https://dreqidkohffwlhjtnexd.supabase.co/functions/v1/fornecedores-polipet-app?v='+Date.now();
+  const r=await fetch(u,{cache:'no-store'});
+  if(!r.ok)throw new Error('HTTP '+r.status);
+  let h=await r.text();
+  const persistentSort=String.raw`
+<style>
+.table-sortable-head{cursor:pointer;user-select:none;white-space:nowrap}
+.table-sort-indicator{display:inline-block;margin-left:6px;min-width:12px;font-size:10px;opacity:.55}
+.table-sortable-head[aria-sort="ascending"] .table-sort-indicator,.table-sortable-head[aria-sort="descending"] .table-sort-indicator{opacity:1}
+</style>
+<script>
+(function(){
+  let currentSort=null, timer=null, applying=false;
+  const norm=s=>String(s||'').trim().normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
+  const numeric=(txt,header)=>{
+    const h=norm(header), s=String(txt||'').trim();
+    if(!s||s==='—'||s==='-') return null;
+    if(h.includes('pedido minimo')||h.includes('media vendas')||h.includes('ref. compra')||h.includes('ref compra')){
+      const n=Number(s.replace(/R\$\s*/gi,'').replace(/\./g,'').replace(',','.').replace(/[^0-9.-]/g,''));
+      return Number.isFinite(n)?n:null;
+    }
+    if(h==='cod.'||h==='cod'||h.includes('codigo')){
+      const n=Number(s.replace(/[^0-9.-]/g,''));
+      return Number.isFinite(n)?n:null;
+    }
+    return undefined;
+  };
+  function sortableTable(){
+    return [...document.querySelectorAll('table')].find(t=>{
+      const hs=[...t.querySelectorAll('thead th')].map(x=>norm(x.textContent));
+      return hs.some(x=>x.includes('fornecedor'))&&hs.some(x=>x==='cod.'||x==='cod'||x.includes('codigo'));
+    })||null;
+  }
+  function compareRows(a,b,index,header,dir){
+    const at=a.cells[index]?.textContent||'', bt=b.cells[index]?.textContent||'';
+    const an=numeric(at,header), bn=numeric(bt,header);
+    let c=0;
+    if(an!==undefined||bn!==undefined){
+      if(an==null&&bn==null)c=0;
+      else if(an==null)c=1;
+      else if(bn==null)c=-1;
+      else c=an-bn;
+    }else c=norm(at).localeCompare(norm(bt),'pt-BR',{numeric:true,sensitivity:'base'});
+    return dir==='asc'?c:-c;
+  }
+  function applySort(){
+    const table=sortableTable();
+    if(!table||!currentSort)return;
+    const tbody=table.tBodies[0], hs=[...table.querySelectorAll('thead th')];
+    if(!tbody||!hs[currentSort.index])return;
+    const header=hs[currentSort.index].textContent||'';
+    const rows=[...tbody.rows], sorted=rows.slice().sort((a,b)=>compareRows(a,b,currentSort.index,header,currentSort.dir));
+    const changed=rows.some((r,i)=>r!==sorted[i]);
+    updateHeaders(table);
+    if(!changed)return;
+    applying=true;
+    const frag=document.createDocumentFragment();sorted.forEach(r=>frag.appendChild(r));tbody.appendChild(frag);
+    applying=false;
+  }
+  function updateHeaders(table){
+    [...table.querySelectorAll('thead th')].forEach((th,i)=>{
+      th.classList.add('table-sortable-head');
+      let ind=th.querySelector('.table-sort-indicator');
+      if(!ind){ind=document.createElement('span');ind.className='table-sort-indicator';th.appendChild(ind)}
+      const active=currentSort&&currentSort.index===i;
+      th.setAttribute('aria-sort',active?(currentSort.dir==='asc'?'ascending':'descending'):'none');
+      ind.textContent=active?(currentSort.dir==='asc'?'↑':'↓'):'↕';
+    });
+  }
+  function prepare(){
+    const table=sortableTable();if(!table)return;
+    updateHeaders(table);
+    applySort();
+  }
+  document.addEventListener('click',e=>{
+    const th=e.target.closest('th');if(!th)return;
+    const table=th.closest('table');if(!table||table!==sortableTable())return;
+    const hs=[...table.querySelectorAll('thead th')], index=hs.indexOf(th);if(index<0)return;
+    e.preventDefault();e.stopImmediatePropagation();
+    const dir=currentSort&&currentSort.index===index&&currentSort.dir==='asc'?'desc':'asc';
+    currentSort={index,dir};
+    applySort();
+  },true);
+  function schedule(){if(applying)return;clearTimeout(timer);timer=setTimeout(prepare,80)}
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',prepare);else prepare();
+  new MutationObserver(schedule).observe(document.documentElement,{childList:true,subtree:true});
+})();
+<\/script>`;
+  h=h.replace(/<\/body>/i,persistentSort+'\n</body>');
+  document.open();document.write(h);document.close();
+}catch(e){document.body.innerHTML='<div class="loading"><div class="box"><strong>Não foi possível carregar o sistema.</strong><p>'+String(e.message||e)+'</p></div></div>'}})();
 </script>
 </body>
 </html>
