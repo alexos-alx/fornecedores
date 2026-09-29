@@ -16,6 +16,10 @@ html,body{margin:0;width:100%;height:100%;background:#07111f;color:#fff;font-fam
   const r=await fetch(u,{cache:'no-store'});
   if(!r.ok)throw new Error('HTTP '+r.status);
   let h=await r.text();
+
+  /* remove a ordenação anterior injetada pelo backend para evitar dois controladores concorrentes */
+  h=h.replace(/<style>\s*\.table-sortable-head\{cursor:pointer;user-select:none;white-space:nowrap;transition:[\s\S]*?<\/script>/i,'');
+
   const persistentSort=String.raw`
 <style>
 .table-sortable-head{cursor:pointer;user-select:none;white-space:nowrap}
@@ -24,7 +28,8 @@ html,body{margin:0;width:100%;height:100%;background:#07111f;color:#fff;font-fam
 </style>
 <script>
 (function(){
-  let currentSort=null, timer=null, applying=false;
+  let currentSort=null;
+  let applying=false;
   const norm=s=>String(s||'').trim().normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
   const numeric=(txt,header)=>{
     const h=norm(header), s=String(txt||'').trim();
@@ -57,20 +62,6 @@ html,body{margin:0;width:100%;height:100%;background:#07111f;color:#fff;font-fam
     }else c=norm(at).localeCompare(norm(bt),'pt-BR',{numeric:true,sensitivity:'base'});
     return dir==='asc'?c:-c;
   }
-  function applySort(){
-    const table=sortableTable();
-    if(!table||!currentSort)return;
-    const tbody=table.tBodies[0], hs=[...table.querySelectorAll('thead th')];
-    if(!tbody||!hs[currentSort.index])return;
-    const header=hs[currentSort.index].textContent||'';
-    const rows=[...tbody.rows], sorted=rows.slice().sort((a,b)=>compareRows(a,b,currentSort.index,header,currentSort.dir));
-    const changed=rows.some((r,i)=>r!==sorted[i]);
-    updateHeaders(table);
-    if(!changed)return;
-    applying=true;
-    const frag=document.createDocumentFragment();sorted.forEach(r=>frag.appendChild(r));tbody.appendChild(frag);
-    applying=false;
-  }
   function updateHeaders(table){
     [...table.querySelectorAll('thead th')].forEach((th,i)=>{
       th.classList.add('table-sortable-head');
@@ -81,23 +72,35 @@ html,body{margin:0;width:100%;height:100%;background:#07111f;color:#fff;font-fam
       ind.textContent=active?(currentSort.dir==='asc'?'↑':'↓'):'↕';
     });
   }
-  function prepare(){
-    const table=sortableTable();if(!table)return;
+  function applySort(){
+    if(applying)return;
+    const table=sortableTable();
+    if(!table)return;
     updateHeaders(table);
-    applySort();
+    if(!currentSort)return;
+    const tbody=table.tBodies[0], hs=[...table.querySelectorAll('thead th')];
+    if(!tbody||!hs[currentSort.index])return;
+    const header=hs[currentSort.index].textContent||'';
+    const rows=[...tbody.rows];
+    const sorted=rows.slice().sort((a,b)=>compareRows(a,b,currentSort.index,header,currentSort.dir));
+    if(!rows.some((r,i)=>r!==sorted[i]))return;
+    applying=true;
+    const frag=document.createDocumentFragment();
+    sorted.forEach(r=>frag.appendChild(r));
+    tbody.appendChild(frag);
+    applying=false;
   }
   document.addEventListener('click',e=>{
     const th=e.target.closest('th');if(!th)return;
     const table=th.closest('table');if(!table||table!==sortableTable())return;
-    const hs=[...table.querySelectorAll('thead th')], index=hs.indexOf(th);if(index<0)return;
+    const hs=[...table.querySelectorAll('thead th')],index=hs.indexOf(th);if(index<0)return;
     e.preventDefault();e.stopImmediatePropagation();
     const dir=currentSort&&currentSort.index===index&&currentSort.dir==='asc'?'desc':'asc';
     currentSort={index,dir};
     applySort();
   },true);
-  function schedule(){if(applying)return;clearTimeout(timer);timer=setTimeout(prepare,80)}
-  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',prepare);else prepare();
-  new MutationObserver(schedule).observe(document.documentElement,{childList:true,subtree:true});
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',applySort);else applySort();
+  new MutationObserver(()=>{if(!applying)applySort()}).observe(document.documentElement,{childList:true,subtree:true});
 })();
 <\/script>`;
   h=h.replace(/<\/body>/i,persistentSort+'\n</body>');
